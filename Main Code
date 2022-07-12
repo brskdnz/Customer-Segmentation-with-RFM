@@ -1,0 +1,120 @@
+import datetime as dt
+import pandas as pd
+
+pd.set_option('display.max_columns', None)
+pd.set_option('display.float_format', lambda x: '%3f' % x)
+
+df_ = pd.read_csv("../input/online-retail-listing/online_retail_listing.csv",delimiter=';',encoding="latin-1")
+df = df_.copy()
+
+df.head()
+df.isnull().sum()
+df["Description"].nunique()
+df.groupby("Description").agg({"Quantity":"sum",
+                              "Price":"max"}).sort_values("Quantity", ascending=False).head()
+df["Price"] = df["Price"].apply(lambda x: float(str(x.replace(',','.'))))
+
+df["TotalPrice"] = df["Quantity"] * df["Price"]
+
+df.describe().T
+df["InvoiceDate"] = pd.to_datetime(df["InvoiceDate"])
+
+df = df[~df["Invoice"].str.contains("C", na=False)]
+
+# Quantity is very low of number due to cancellation of invoice that includes letter of "C"
+
+df.describe().T
+
+# Calculating RFM Metrics
+
+df["InvoiceDate"].max()
+import warnings
+warnings.filterwarnings("ignore")
+
+# Recency values should be higher than 1, so today_date can be choosen maximum value +2
+
+today_date = pd.datetime(2011, 12, 12)
+
+rfm = df.groupby("Customer ID").agg({"InvoiceDate": lambda date: (today_date - date.max()).days,
+                                     "Invoice": lambda Invoice: Invoice.nunique(),
+                                     "TotalPrice":lambda TotalPrice: TotalPrice.sum()})
+
+rfm.columns = ["Recency", "Frequency", "Monetary"]
+
+rfm = rfm[rfm["Monetary"] > 0]
+
+rfm.describe().T
+
+import seaborn as sns
+
+sns.set(rc = {"figure.figsize" : (18,5)})
+
+sns.boxplot(rfm["Monetary"], palette="summer")
+
+sns.set(rc = {"figure.figsize" : (18,5)})
+
+sns.boxplot(rfm["Frequency"], palette="summer")
+
+sns.set(rc = {"figure.figsize" : (18,5)})
+
+sns.boxplot(rfm["Recency"], palette="summer")
+
+# Calculating RFM Scores
+
+# Frequency, recency, monetary are scaled to with 'qcut' function for assesting to these values.
+
+rfm["Recency_score"] = pd.cut(rfm["Recency"], 5, labels=[5,4,3,2,1])
+
+rfm["Monetary_score"] = pd.cut(rfm["Monetary"], 5, labels=[1,2,3,4,5])
+
+rfm["Frequency_score"] = pd.cut(rfm["Frequency"].rank(method="first"), 5, labels=[1,2,3,4,5])
+
+rfm["RF_SCORE"] = (rfm["Recency_score"].astype(str) + rfm["Frequency_score"].astype(str))
+
+rfm.head(10)
+
+import seaborn as sns
+
+sns.pairplot(rfm,hue="Frequency_score")
+
+import seaborn as sns
+
+sns.pairplot(rfm,hue="Recency_score")
+
+# Creating & Analysing RFM Segments
+
+# The criteria based on below picture that is related to RF score.
+
+# Segmentation map:
+
+seg_map = {
+    r'[1-2][1-2]': 'hibernating',
+    r'[1-2][3-4]': 'at_Risk',
+    r'[1-2]5': 'cant_loose',
+    r'3[1-2]': 'about_to_sleep',
+    r'33': 'need_attention',
+    r'[3-4][4-5]': 'loyal_customers',
+    r'41': 'promising',
+    r'51': 'new_customers',
+    r'[4-5][2-3]': 'potential_loyalists',
+    r'5[4-5]': 'champions'
+}
+
+rfm["Segment"] = rfm["RF_SCORE"].replace(seg_map, regex=True)
+
+rfm.head(10)
+
+import seaborn as sns
+
+sns.barplot(x = rfm["Segment"], y = rfm["Monetary"], palette="bright")
+
+import seaborn as sns
+
+sns.barplot(x = rfm["Segment"], y = rfm["Frequency"], palette="bright")
+
+import seaborn as sns
+
+sns.barplot(x = rfm["Segment"], y = rfm["Recency"], palette="bright")
+
+# These segments are applied some different policy like if you campaign for "at_Risk" and "hibernating" customers via email or text massage, 
+# it can be reduced churn rate and sales of products can be increased. So customers of company can be managed very easily and wisely.
